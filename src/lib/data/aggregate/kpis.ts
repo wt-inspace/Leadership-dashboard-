@@ -1,44 +1,53 @@
 import type { KpiSummary, PackageTier, RawDataset } from "../../types";
-import { aggregatePackageDistribution } from "./packages";
-import { activeClientsAt, identifyChurnedClients, joinLocales } from "./churn";
-import { shiftDays, todayIso } from "./shared";
+import { tierAt, type ClientModel } from "./model";
+import { getChurnEvents } from "./churn";
+import { dummyClientIds, shiftDays, subscriptionTierMap, todayIso } from "./shared";
 
-export function computeKpis(ds: RawDataset, warnings: string[]): KpiSummary {
+export function computeKpis(ds: RawDataset, model: ClientModel, warnings: string[]): KpiSummary {
   const asOf = todayIso();
-  const locales = joinLocales(ds, []);
+  const dummies = dummyClientIds(ds);
+  const subTiers = subscriptionTierMap(ds);
 
-  // Active clients = distinct non-dummy clients with a currently active locale.
-  const activeNow = new Set<string>();
-  for (const loc of locales) {
-    const active =
-      loc.status === "active" ||
-      (loc.status !== "cancelled" && loc.serviceEnd == null) ||
-      (loc.serviceEnd != null && loc.serviceEnd >= asOf && loc.status !== "cancelled");
-    if (active) activeNow.add(loc.clientId);
+  // Active clients = non-dummy clients flagged subscription_active = true.
+  const currentDistribution: Record<PackageTier, number> = {
+    package1: 0,
+    package2: 0,
+    package3: 0,
+  };
+  let activeClients = 0;
+  let missingState = 0;
+  for (const c of ds.clients) {
+    const id = String(c.client_id);
+    if (dummies.has(id)) continue;
+    if (c.subscription_active !== true) continue;
+    activeClients++;
+    const state = model.byId.get(id);
+    if (state) {
+      currentDistribution[tierAt(state, model.currentMonth)]++;
+    } else {
+      missingState++;
+      currentDistribution[subTiers.get(id) ?? "package1"]++;
+    }
   }
-
-  // Distribution "now" = tier split of the latest monthly_strategy month.
-  const distPoints = aggregatePackageDistribution(ds, 1, []);
-  const latest = distPoints[distPoints.length - 1];
-  const currentDistribution: Record<PackageTier, number> = latest
-    ? { package1: latest.package1, package2: latest.package2, package3: latest.package3 }
-    : { package1: 0, package2: 0, package3: 0 };
-
-  let activeClients = activeNow.size;
-  if (activeClients === 0) {
-    activeClients = latest?.total ?? 0;
+  if (missingState > 0) {
     warnings.push(
-      "KPIs: no active domain_locale rows found; falling back to client count of the latest monthly_strategy month",
+      `KPIs: ${missingState} active client(s) have no start-date source; tier taken from Client.subscription fallback`,
     );
   }
 
-  const churned = identifyChurnedClients(ds, []); // warnings collected via churn aggregation
+  // Trailing churn windows from the deduped churn events.
+  const events = getChurnEvents(model);
   const d30 = shiftDays(asOf, -30);
   const d90 = shiftDays(asOf, -90);
-  const churnedLast30d = churned.filter((c) => c.churnDate >= d30 && c.churnDate <= asOf).length;
-  const churnedLast90d = churned.filter((c) => c.churnDate >= d90 && c.churnDate <= asOf).length;
+  const churnedLast30d = events.filter((e) => e.date >= d30 && e.date <= asOf).length;
+  const churnedLast90d = events.filter((e) => e.date >= d90 && e.date <= asOf).length;
 
-  const activeAt90 = activeClientsAt(locales, d90);
+  // Rate vs. clients active ~90 days ago (month-granularity active model).
+  const month90 = d90.slice(0, 7);
+  let activeAt90 = 0;
+  for (const s of model.states) {
+    if (s.startMonth <= month90 && (s.churnMonth == null || s.churnMonth > month90)) activeAt90++;
+  }
   const churnRate90d = activeAt90 > 0 ? churnedLast90d / activeAt90 : 0;
 
   return { activeClients, currentDistribution, churnedLast30d, churnedLast90d, churnRate90d, asOf };

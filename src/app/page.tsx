@@ -6,7 +6,9 @@ import PackageDistributionChart from "@/components/charts/PackageDistributionCha
 import GscTrendChart from "@/components/charts/GscTrendChart";
 import ChurnChart from "@/components/charts/ChurnChart";
 
-export const revalidate = 300;
+// Render at request time so runtime env vars (Supabase key, demo mode) always
+// take effect; getDashboardData caches the fetched data in memory for 5 min.
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const { kpis, packageDistribution, gscTrend, churn, meta } = await getDashboardData();
@@ -37,14 +39,14 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-6">
         <SectionCard
           title="Package Distribution Over Time"
-          subtitle="Distinct clients per package tier per month (from monthly strategies)"
+          subtitle="Active clients per package tier per month (offer acceptance, monthly strategies, and Stripe)"
         >
           <PackageDistributionChart data={packageDistribution} />
         </SectionCard>
 
         <SectionCard
           title="Google Search Console — Client Results Over Time"
-          subtitle="Aggregated sitewide metrics across all non-dummy clients"
+          subtitle="Aggregated sitewide metrics across all non-dummy clients (latest snapshot per client per month)"
         >
           <GscTrendChart
             data={gscTrend}

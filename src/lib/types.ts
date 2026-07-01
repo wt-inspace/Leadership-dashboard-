@@ -55,30 +55,33 @@ export interface DashboardData {
 export interface ClientRow {
   client_id: string | number;
   dummy_client: boolean | null;
-  subscription: string | number | null;
+  subscription: string | number | null; // FK to Subscription.subscription_type (0..3)
+  subscription_active: boolean | null;
 }
 
 export interface SubscriptionRow {
-  subscription_type: string | number | null;
+  subscription_type: string | number | null; // 0=trial(5), 1=10, 2=20, 3=40
   items_per_month: number | null;
 }
 
 export interface MonthlyStrategyRow {
   client_id: string | number | null;
+  /** Almost always null in production — never rely on it. */
   year_period: string | number | null;
+  /** Engagement month number (1, 2, 3, ...) — NOT a calendar month. */
   month_period: string | number | null;
   items_per_month: number | null;
   strategy_version: number | null;
-  status: string | null;
-  start_date: string | null;
+  status: string | null; // to_approve | approved | modifying
+  start_date: string | null; // calendar bucketing uses start_date.slice(0, 7)
   end_date: string | null;
 }
 
 export interface GscMetricsRow {
   client_id: string | number | null;
-  window_key: string | null;
-  metric_key: string | null;
-  segment: string | null;
+  window_key: string | null; // 28d | 3m | 6m | 12m
+  metric_key: string | null; // gsc_sitewide_{window}_{segment}_{plain|compared}
+  segment: string | null; // all | nonbranded
   start_date: string | null;
   end_date: string | null;
   clicks: number | null;
@@ -87,18 +90,31 @@ export interface GscMetricsRow {
   position: number | null;
 }
 
-export interface DomainRow {
-  domain_id: string | number;
+/** Offer acceptance = client start date + initial package (via MRR 600/1000/1750). */
+export interface ClientStatusRow {
   client_id: string | number | null;
+  date_offer_accepted: string | null;
+  MRR: number | null;
 }
 
-export interface DomainLocaleRow {
-  domain_id: string | number | null;
-  subscription_status: string | null;
-  service_start: string | null;
-  service_end: string | null;
-  items_per_month: number | null;
-  mrr: number | null;
+export interface StripeSubscriptionRow {
+  client_id: string | number | null;
+  status: string | null; // active | past_due | canceled | incomplete_expired
+  subscription_start_date: string | null;
+  /** No canceled_at column exists — for canceled subs updated_at approximates the cancellation date. */
+  updated_at: string | null;
+  MRR: number | null;
+}
+
+export interface StripeInvoiceRow {
+  client_id: string | number | null;
+  type: string | null;
+  status: string | null;
+  invoice_paid: boolean | null;
+  /** Cents, often including 21% VAT (e.g. 72600 = EUR 600 x 1.21). */
+  amount_due: number | null;
+  paid_at: string | null;
+  invoice_created_at: string | null;
 }
 
 /**
@@ -110,6 +126,7 @@ export interface RawDataset {
   subscriptions: SubscriptionRow[];
   monthlyStrategies: MonthlyStrategyRow[];
   gscMetrics: GscMetricsRow[];
-  domains: DomainRow[];
-  domainLocales: DomainLocaleRow[];
+  clientStatuses: ClientStatusRow[];
+  stripeSubscriptions: StripeSubscriptionRow[];
+  stripeInvoices: StripeInvoiceRow[];
 }

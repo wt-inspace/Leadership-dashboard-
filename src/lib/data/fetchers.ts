@@ -2,11 +2,12 @@ import "server-only";
 import { getSupabaseClient } from "../supabase";
 import type {
   ClientRow,
-  DomainLocaleRow,
-  DomainRow,
+  ClientStatusRow,
   GscMetricsRow,
   MonthlyStrategyRow,
   RawDataset,
+  StripeInvoiceRow,
+  StripeSubscriptionRow,
   SubscriptionRow,
 } from "../types";
 
@@ -37,7 +38,7 @@ async function fetchTablePaginated<T>(table: string, columns: string): Promise<T
 }
 
 export function fetchClients(): Promise<ClientRow[]> {
-  return fetchTable<ClientRow>("Client", "client_id, dummy_client, subscription");
+  return fetchTable<ClientRow>("Client", "client_id, dummy_client, subscription, subscription_active");
 }
 
 export function fetchSubscriptions(): Promise<SubscriptionRow[]> {
@@ -59,27 +60,53 @@ export function fetchGscMetrics(): Promise<GscMetricsRow[]> {
   );
 }
 
-export function fetchDomains(): Promise<DomainRow[]> {
-  return fetchTablePaginated<DomainRow>("domain", "domain_id, client_id");
+/** Start date + initial package source: MIN(date_offer_accepted) + its MRR per client. */
+export function fetchClientStatuses(): Promise<ClientStatusRow[]> {
+  return fetchTablePaginated<ClientStatusRow>(
+    "client_status",
+    "client_id, date_offer_accepted, MRR",
+  );
 }
 
-export function fetchDomainLocales(): Promise<DomainLocaleRow[]> {
-  // Joined to domain/Client in Node — no PostgREST FK embedding.
-  return fetchTablePaginated<DomainLocaleRow>(
-    "domain_locale",
-    "domain_id, subscription_status, service_start, service_end, items_per_month, mrr",
+export function fetchStripeSubscriptions(): Promise<StripeSubscriptionRow[]> {
+  return fetchTablePaginated<StripeSubscriptionRow>(
+    "stripe_subscriptions",
+    "client_id, status, subscription_start_date, updated_at, MRR",
+  );
+}
+
+export function fetchStripeInvoices(): Promise<StripeInvoiceRow[]> {
+  return fetchTablePaginated<StripeInvoiceRow>(
+    "stripe_invoices",
+    "client_id, type, status, invoice_paid, amount_due, paid_at, invoice_created_at",
   );
 }
 
 export async function fetchRawDataset(): Promise<RawDataset> {
-  const [clients, subscriptions, monthlyStrategies, gscMetrics, domains, domainLocales] =
-    await Promise.all([
-      fetchClients(),
-      fetchSubscriptions(),
-      fetchMonthlyStrategies(),
-      fetchGscMetrics(),
-      fetchDomains(),
-      fetchDomainLocales(),
-    ]);
-  return { clients, subscriptions, monthlyStrategies, gscMetrics, domains, domainLocales };
+  const [
+    clients,
+    subscriptions,
+    monthlyStrategies,
+    gscMetrics,
+    clientStatuses,
+    stripeSubscriptions,
+    stripeInvoices,
+  ] = await Promise.all([
+    fetchClients(),
+    fetchSubscriptions(),
+    fetchMonthlyStrategies(),
+    fetchGscMetrics(),
+    fetchClientStatuses(),
+    fetchStripeSubscriptions(),
+    fetchStripeInvoices(),
+  ]);
+  return {
+    clients,
+    subscriptions,
+    monthlyStrategies,
+    gscMetrics,
+    clientStatuses,
+    stripeSubscriptions,
+    stripeInvoices,
+  };
 }

@@ -24,10 +24,14 @@ export interface GscOverrides {
   segment?: string;
 }
 
+/**
+ * Defaults match the verified production combo. Auto-discovery still kicks in
+ * (with a warning) if the pinned combo matches no rows.
+ */
 export function getGscOverrides(): GscOverrides {
   return {
-    windowKey: process.env.GSC_WINDOW_KEY || undefined,
-    metricKey: process.env.GSC_METRIC_KEY || undefined,
-    segment: process.env.GSC_SEGMENT || undefined,
+    windowKey: process.env.GSC_WINDOW_KEY || "28d",
+    metricKey: process.env.GSC_METRIC_KEY || "gsc_sitewide_28d_all_compared",
+    segment: process.env.GSC_SEGMENT || "all",
   };
 }

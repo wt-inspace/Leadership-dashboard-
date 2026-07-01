@@ -21,6 +21,22 @@ interface ComboTally {
   endDates: Set<string>;
 }
 
+/**
+ * A client can have several snapshots of the same combo within one month —
+ * keep only the LATEST end_date per (client, month, metric_key) so clicks are
+ * not double-counted.
+ */
+function dedupeSnapshots(rows: GscMetricsRow[]): GscMetricsRow[] {
+  const latest = new Map<string, GscMetricsRow>();
+  for (const r of rows) {
+    if (!r.end_date || !/^\d{4}-\d{2}/.test(r.end_date)) continue;
+    const key = `${r.client_id ?? ""}|${r.end_date.slice(0, 7)}|${r.metric_key ?? ""}`;
+    const cur = latest.get(key);
+    if (!cur || r.end_date > cur.end_date!) latest.set(key, r);
+  }
+  return [...latest.values()];
+}
+
 function bucketRows(rows: GscMetricsRow[], monthsBack: number): GscTrendPoint[] {
   interface Bucket {
     clicks: number;
@@ -30,7 +46,7 @@ function bucketRows(rows: GscMetricsRow[], monthsBack: number): GscTrendPoint[] 
     clients: Set<string>;
   }
   const buckets = new Map<string, Bucket>();
-  for (const r of rows) {
+  for (const r of dedupeSnapshots(rows)) {
     if (!r.end_date || !/^\d{4}-\d{2}/.test(r.end_date)) continue;
     const month = r.end_date.slice(0, 7);
     let b = buckets.get(month);

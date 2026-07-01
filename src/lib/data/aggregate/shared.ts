@@ -1,5 +1,8 @@
 import type { PackageTier, RawDataset } from "../../types";
 
+/** Business data starts here — series are floored at this month. */
+export const DATA_FLOOR_MONTH = "2025-08";
+
 /** IDs of clients flagged as dummy — must be excluded from every metric. */
 export function dummyClientIds(ds: RawDataset): Set<string> {
   const out = new Set<string>();
@@ -14,6 +17,17 @@ export function tierFromItems(items: number | null | undefined): PackageTier | n
   if (items == null || !Number.isFinite(items) || items <= 0) return null;
   if (items <= 10) return "package1";
   if (items <= 20) return "package2";
+  return "package3";
+}
+
+/**
+ * Monthly EUR -> tier by NEAREST of {600, 1000, 1750} (midpoints 800 / 1375).
+ * Handles stripe outliers such as 500, 1400, 10200. 0/null -> null.
+ */
+export function tierFromMrr(mrr: number | null | undefined): PackageTier | null {
+  if (mrr == null || !Number.isFinite(mrr) || mrr <= 0) return null;
+  if (mrr <= 800) return "package1";
+  if (mrr <= 1375) return "package2";
   return "package3";
 }
 
@@ -32,22 +46,22 @@ export function subscriptionTierMap(ds: RawDataset): Map<string, PackageTier> {
   return out;
 }
 
-/**
- * Normalize year_period/month_period (int or string) to "YYYY-MM".
- * Falls back to start_date.slice(0, 7) when unparsable.
- */
-export function monthKeyFromPeriod(
-  yearPeriod: string | number | null,
-  monthPeriod: string | number | null,
-  startDate: string | null,
-): string | null {
-  const yr = yearPeriod != null ? Number.parseInt(String(yearPeriod), 10) : NaN;
-  const mo = monthPeriod != null ? Number.parseInt(String(monthPeriod), 10) : NaN;
-  if (Number.isFinite(yr) && yr >= 1970 && Number.isFinite(mo) && mo >= 1 && mo <= 12) {
-    return `${yr}-${String(mo).padStart(2, "0")}`;
-  }
-  if (startDate && /^\d{4}-\d{2}/.test(startDate)) return startDate.slice(0, 7);
-  return null;
+/** "YYYY-MM-DD..." -> "YYYY-MM", or null when not a date string. */
+export function monthOf(dateStr: string | null | undefined): string | null {
+  if (!dateStr || !/^\d{4}-\d{2}/.test(dateStr)) return null;
+  return dateStr.slice(0, 7);
+}
+
+/** Shift a "YYYY-MM" key by `delta` months (UTC-safe). */
+export function addMonthsToKey(key: string, delta: number): string {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Current UTC month as "YYYY-MM". */
+export function currentMonthKey(): string {
+  return new Date().toISOString().slice(0, 7);
 }
 
 /** Last n month keys ("YYYY-MM"), oldest first, ending in the current UTC month. */
@@ -59,6 +73,11 @@ export function lastNMonthKeys(n: number): string[] {
     out.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
   }
   return out;
+}
+
+/** Chart window: last monthsBack months, clipped to the data floor and the current month. */
+export function monthWindow(monthsBack: number): string[] {
+  return lastNMonthKeys(monthsBack).filter((m) => m >= DATA_FLOOR_MONTH);
 }
 
 /** Today's UTC date as "YYYY-MM-DD". */
